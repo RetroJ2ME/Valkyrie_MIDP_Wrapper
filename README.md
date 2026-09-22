@@ -10,7 +10,7 @@ You only need [Apache Ant](https://ant.apache.org/bindownload.cgi)!
 
 1. Put the DoJa version JAR/SP/JAM into `games/`;
 2. Run `ant`;
-3. The MIDP version of Sa·Ga will be output to `dist/` :)
+3. The MIDP version will be output to `dist/` :)
 
 
 ## Real Devices
