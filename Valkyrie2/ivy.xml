@@ -1,0 +1,12 @@
+<ivy-module version="2.0">
+    <info organisation="Magstic" module="DoJa-Wrapper-MIDP"/>
+    <configurations>
+        <conf name="j2me"/>
+        <conf name="build"/>
+    </configurations>
+    <dependencies>
+        <dependency org="org.microemu" name="cldcapi11" rev="2.0.4" conf="j2me->default" transitive="false"/>
+        <dependency org="org.microemu" name="midpapi20" rev="2.0.4" conf="j2me->default" transitive="false"/>
+        <dependency org="net.sf.proguard" name="proguard-base" rev="6.0.3" conf="build->default" transitive="false"/>
+    </dependencies>
+</ivy-module>

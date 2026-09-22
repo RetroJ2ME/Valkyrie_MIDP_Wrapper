@@ -1,0 +1,15 @@
+/Valkyrie1/build/
+/Valkyrie1/dist/
+/Valkyrie1/.deps/
+/Valkyrie1/games/*jam
+/Valkyrie1/games/*jar
+/Valkyrie1/games/*sp
+/Valkyrie1/comp/translation/*.tsv
+
+/Valkyrie2/build/
+/Valkyrie2/dist/
+/Valkyrie2/.deps/
+/Valkyrie2/games/*jam
+/Valkyrie2/games/*jar
+/Valkyrie2/games/*sp
+/Valkyrie2/comp/translation/*.tsv

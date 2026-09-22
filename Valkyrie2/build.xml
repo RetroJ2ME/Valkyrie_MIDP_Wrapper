@@ -1,0 +1,455 @@
+<project name="Valkyrie2-MIDP" default="build" basedir="." xmlns:ivy="antlib:org.apache.ivy.ant">
+    <property name="games.dir" value="games"/>
+    <property name="comp.dir" value="comp"/>
+    <property name="assets.dir" value="assets"/>
+
+    <property name="core.repo" value="https://github.com/RetroJ2ME/DoJa-to-MIDP-Core"/>
+
+    <property name="translation.dir" value="${comp.dir}/translation"/>
+    <property name="translation.config" value="${translation.dir}/config.properties"/>
+    <property name="translation.index" value="${translation.dir}/Index.tsv"/>
+    <property name="translation.text" value="${translation.dir}/Translation.tsv"/>
+    <property name="spritepack.dir" value="${comp.dir}/spritepack"/>
+    <property name="scratchpad.schema.file" value="${comp.dir}/scratchpad/GameScratchpad.java"/>
+    <property name="game.patch.file" value="${comp.dir}/patch/GamePatch.java"/>
+    <property name="game.runtime.dir" value="${comp.dir}/runtime"/>
+
+    <property name="build.dir" value="build"/>
+    <property name="tools.classes" value="${build.dir}/tools"/>
+    <property name="comp.classes" value="${build.dir}/comp"/>
+    <property name="runtime.classes" value="${build.dir}/runtime"/>
+    <property name="game.classes" value="${build.dir}/game"/>
+    <property name="generated.dir" value="${build.dir}/generated"/>
+    <property name="logical.sp" value="${build.dir}/scratchpad.bin"/>
+    <property name="translation.resolved" value="${build.dir}/TranslationResolved.tsv"/>
+    <property name="dist.dir" value="dist"/>
+
+    <property name="deps.dir" value=".deps"/>
+    <property name="core.dir" value="${deps.dir}/core"/>
+    <property name="runtime.src" value="${core.dir}/runtime"/>
+    <property name="tools.src" value="${core.dir}/tools"/>
+    <property name="deps.lib" value="${deps.dir}/lib"/>
+    <property name="ivy.version" value="2.5.3"/>
+    <property name="ivy.jar" value="${deps.dir}/ivy/ivy-${ivy.version}.jar"/>
+    <property name="ivy.url" value="https://repo.maven.apache.org/maven2/org/apache/ivy/ivy/${ivy.version}/ivy-${ivy.version}.jar"/>
+    <property name="cldc.jar" value="${deps.lib}/cldcapi11-2.0.4.jar"/>
+    <property name="midp.jar" value="${deps.lib}/midpapi20-2.0.4.jar"/>
+    <property name="proguard.jar" value="${deps.lib}/proguard-base-6.0.3.jar"/>
+    <property name="mld.jar" value="${deps.lib}/mld-player.jar"/>
+    <property name="mld.url" value="https://github.com/Magstic/MLD_Player/releases/latest/download/mld-player.jar"/>
+    <property name="font.cache.dir" value="${deps.dir}/font"/>
+    <property name="font.cache.file" value="${font.cache.dir}/fusion-pixel-12px-monospaced-ja.ttf"/>
+
+    <condition property="sound.module.args"
+               value="--add-exports java.desktop/com.sun.media.sound=ALL-UNNAMED">
+        <matches string="${ant.java.version}" pattern="^(9|[1-9][0-9]+)$"/>
+    </condition>
+    <property name="sound.module.args" value=""/>
+
+    <path id="tool.classpath">
+        <pathelement location="${tools.classes}"/>
+        <pathelement location="${mld.jar}"/>
+    </path>
+    <path id="comp.classpath">
+        <pathelement location="${comp.classes}"/>
+        <path refid="tool.classpath"/>
+    </path>
+    <path id="runtime.classpath">
+        <pathelement location="${cldc.jar}"/>
+        <pathelement location="${midp.jar}"/>
+    </path>
+
+    <target name="check-build-jdk">
+        <fail message="Build tools require JDK 8 or newer (detected ${ant.java.version})">
+            <condition><matches string="${ant.java.version}" pattern="^1\.[1-7]$"/></condition>
+        </fail>
+    </target>
+
+    <target name="locate-game">
+        <resourcecount property="jam.count"><fileset dir="${games.dir}" includes="*.jam"/></resourcecount>
+        <resourcecount property="jar.count"><fileset dir="${games.dir}" includes="*.jar"/></resourcecount>
+        <resourcecount property="sp.count"><fileset dir="${games.dir}" includes="*.sp"/></resourcecount>
+        <fail message="games/ must contain exactly one .jam"><condition><not><equals arg1="${jam.count}" arg2="1"/></not></condition></fail>
+        <fail message="games/ must contain exactly one .jar"><condition><not><equals arg1="${jar.count}" arg2="1"/></not></condition></fail>
+        <fail message="games/ must contain exactly one .sp"><condition><not><equals arg1="${sp.count}" arg2="1"/></not></condition></fail>
+
+        <pathconvert property="game.jam" pathsep=""><fileset dir="${games.dir}" includes="*.jam"/></pathconvert>
+        <pathconvert property="game.jar" pathsep=""><fileset dir="${games.dir}" includes="*.jar"/></pathconvert>
+        <pathconvert property="game.sp" pathsep=""><fileset dir="${games.dir}" includes="*.sp"/></pathconvert>
+        <basename property="dist.name" file="${game.jar}" suffix=".jar"/>
+
+        <property name="midlet.name" value="${dist.name}"/>
+        <property name="midlet.vendor" value="Bandai Namco"/>
+
+        <available file="${translation.config}" property="translation.enabled"/>
+        <available file="${spritepack.dir}/config.properties" property="spritepack.enabled"/>
+        <available file="${scratchpad.schema.file}" property="scratchpad.schema.enabled"/>
+        <available file="${game.patch.file}" property="game.patch.enabled"/>
+        <available file="${game.runtime.dir}" type="dir" property="game.runtime.enabled"/>
+        <property file="${translation.config}"/>
+        <property file="${spritepack.dir}/config.properties"/>
+    </target>
+
+    <target name="check-deps">
+        <condition property="deps.present"><and>
+            <available file="${cldc.jar}"/>
+            <available file="${midp.jar}"/>
+            <available file="${proguard.jar}"/>
+        </and></condition>
+        <condition property="ivy.present"><isset property="deps.present"/></condition>
+    </target>
+    <target name="check-ivy" depends="check-deps" unless="deps.present">
+        <available file="${ivy.jar}" property="ivy.present"/>
+    </target>
+    <target name="bootstrap-ivy" depends="check-ivy" unless="ivy.present">
+        <mkdir dir="${deps.dir}/ivy"/>
+        <get src="${ivy.url}" dest="${ivy.jar}"/>
+    </target>
+    <target name="resolve-deps" depends="check-deps,bootstrap-ivy" unless="deps.present">
+        <mkdir dir="${deps.lib}"/>
+        <taskdef resource="org/apache/ivy/ant/antlib.xml" uri="antlib:org.apache.ivy.ant" classpath="${ivy.jar}"/>
+        <ivy:settings file="ivysettings.xml"/>
+        <ivy:resolve file="ivy.xml" conf="j2me,build"/>
+        <ivy:retrieve pattern="${deps.lib}/[artifact]-[revision].[ext]" conf="j2me,build"/>
+    </target>
+    <target name="fetch-mld">
+        <mkdir dir="${deps.lib}"/>
+        <get src="${mld.url}" dest="${mld.jar}" usetimestamp="true"/>
+    </target>
+    <target name="dependencies" depends="check-deps,resolve-deps,fetch-mld"/>
+
+    <target name="check-core">
+        <condition property="core.present"><and>
+            <available file="${runtime.src}/com/nttdocomo/ui/IApplication.java"/>
+            <available file="${tools.src}/jam/Jam.java"/>
+        </and></condition>
+    </target>
+    <target name="fetch-core" depends="check-core" unless="core.present">
+        <mkdir dir="${deps.dir}"/>
+        <exec executable="git" failonerror="true">
+            <arg value="clone"/><arg value="--depth"/><arg value="1"/>
+            <arg value="${core.repo}"/><arg value="${core.dir}"/>
+        </exec>
+    </target>
+    <target name="update-core" depends="check-core" if="core.present">
+        <exec executable="git" dir="${core.dir}" failonerror="true">
+            <arg value="pull"/><arg value="--ff-only"/>
+        </exec>
+    </target>
+
+    <target name="core" depends="fetch-core,update-core"/>
+
+    <target name="check-runtime-source" depends="core">
+        <resourcecount property="runtime.classliteral.count">
+            <fileset dir="${runtime.src}" includes="**/*.java">
+                <containsregexp expression="[.]class([^A-Za-z0-9_$]|$)"/>
+            </fileset>
+        </resourcecount>
+        <fail message="CLDC runtime source must not use Java class literals (Type.class)">
+            <condition><not><equals arg1="${runtime.classliteral.count}" arg2="0"/></not></condition>
+        </fail>
+    </target>
+
+    <target name="check-sprite-runtime-source" depends="locate-game" if="spritepack.enabled">
+        <resourcecount property="sprite.classliteral.count">
+            <fileset dir="${spritepack.dir}" includes="SpritePackImageProvider.java,SpriteRepository.java">
+                <containsregexp expression="[.]class([^A-Za-z0-9_$]|$)"/>
+            </fileset>
+        </resourcecount>
+        <fail message="CLDC sprite runtime source must not use Java class literals (Type.class)">
+            <condition><not><equals arg1="${sprite.classliteral.count}" arg2="0"/></not></condition>
+        </fail>
+    </target>
+
+    <target name="reset-output">
+        <delete dir="${build.dir}"/>
+        <delete dir="${dist.dir}"/>
+    </target>
+
+    <target name="prepare" depends="reset-output,check-build-jdk,locate-game,dependencies,core">
+        <mkdir dir="${tools.classes}"/>
+        <mkdir dir="${comp.classes}"/>
+        <mkdir dir="${runtime.classes}"/>
+        <mkdir dir="${game.classes}"/>
+        <mkdir dir="${generated.dir}/assets"/>
+        <mkdir dir="${dist.dir}"/>
+    </target>
+
+    <target name="compile-tools" depends="prepare">
+        <javac srcdir="${tools.src}" destdir="${tools.classes}" encoding="UTF-8"
+               includeantruntime="false" debug="false" source="8" target="8">
+            <classpath><pathelement location="${mld.jar}"/></classpath>
+            <compilerarg value="-XDignore.symbol.file"/>
+            <compilerarg value="-Xlint:-options"/>
+        </javac>
+    </target>
+
+    <target name="init" depends="compile-tools"/>
+
+    <target name="compile-comp" depends="init">
+        <javac srcdir="${comp.dir}" destdir="${comp.classes}" encoding="UTF-8"
+               includeantruntime="false" debug="false" source="8" target="8">
+            <include name="patch/**/*.java"/>
+            <include name="scratchpad/**/*.java"/>
+            <include name="translation/**/*.java"/>
+            <include name="font/**/*.java"/>
+            <include name="spritepack/SpritePackBuild.java"/>
+            <classpath refid="tool.classpath"/>
+            <compilerarg value="-Xlint:-options"/>
+        </javac>
+    </target>
+
+    <target name="jam-metadata" depends="init">
+        <java classname="doja.tools.jam.MidpMetadataBuild" fork="true" failonerror="true">
+            <classpath refid="tool.classpath"/>
+            <arg value="${game.jam}"/>
+            <arg value="${game.jar}"/>
+            <arg value="${build.dir}/midp.properties"/>
+        </java>
+        <loadproperties srcfile="${build.dir}/midp.properties"/>
+    </target>
+
+    <target name="extract-game" depends="init">
+        <delete dir="${game.classes}"/>
+        <mkdir dir="${game.classes}"/>
+        <unzip src="${game.jar}" dest="${game.classes}"/>
+        <delete dir="${game.classes}/META-INF"/>
+    </target>
+
+    <target name="patch-common" depends="extract-game">
+        <java classname="doja.tools.classfile.Utf8Patch" fork="true" failonerror="true">
+            <classpath refid="tool.classpath"/>
+            <arg value="${game.classes}"/>
+            <arg value="javax/microedition/io/Connector"/>
+            <arg value="com/nttdocomo/io/ConnectorProxy"/>
+        </java>
+        <java classname="doja.tools.classfile.SjisPatch" fork="true" failonerror="true">
+            <classpath refid="tool.classpath"/>
+            <arg value="${game.classes}"/>
+        </java>
+    </target>
+
+    <target name="patch-comp" depends="patch-common,compile-comp" if="game.patch.enabled">
+        <java classname="GamePatch" fork="true" failonerror="true">
+            <classpath refid="comp.classpath"/>
+            <arg value="${game.classes}"/>
+        </java>
+    </target>
+    <target name="patch-game" depends="patch-common,patch-comp"/>
+
+    <target name="descriptor" depends="jam-metadata">
+        <java classname="doja.tools.jam.DescriptorBuild" fork="true" failonerror="true">
+            <classpath refid="tool.classpath"/>
+            <arg value="${game.jam}"/>
+            <arg value="${generated.dir}/assets/app.bin"/>
+        </java>
+    </target>
+
+    <target name="scratchpad-with-schema" depends="compile-comp" if="scratchpad.schema.enabled">
+        <java classname="doja.tools.scratchpad.ScratchpadBuild" fork="true" failonerror="true">
+            <classpath refid="comp.classpath"/>
+            <jvmarg line="${sound.module.args}"/>
+            <arg value="${game.jam}"/>
+            <arg value="${game.sp}"/>
+            <arg value="${generated.dir}"/>
+            <arg value="GameScratchpad"/>
+        </java>
+    </target>
+    <target name="scratchpad-without-schema" depends="init" unless="scratchpad.schema.enabled">
+        <java classname="doja.tools.scratchpad.ScratchpadBuild" fork="true" failonerror="true">
+            <classpath refid="tool.classpath"/>
+            <jvmarg line="${sound.module.args}"/>
+            <arg value="${game.jam}"/>
+            <arg value="${game.sp}"/>
+            <arg value="${generated.dir}"/>
+        </java>
+    </target>
+    <target name="scratchpad" depends="scratchpad-with-schema,scratchpad-without-schema"/>
+
+    <target name="translation-prepare" depends="scratchpad,compile-comp" if="translation.enabled">
+        <java classname="translation.TranslationPrepare" fork="true" failonerror="true">
+            <classpath refid="comp.classpath"/>
+            <arg value="${game.jar}"/>
+            <arg value="${generated.dir}/assets"/>
+            <arg value="${translation.config}"/>
+            <arg value="${translation.index}"/>
+            <arg value="${translation.text}"/>
+        </java>
+    </target>
+    <target name="translate" depends="patch-game,scratchpad,translation-prepare,compile-comp" if="translation.enabled">
+        <java classname="translation.TranslationApply" fork="true" failonerror="true">
+            <classpath refid="comp.classpath"/>
+            <arg value="${game.classes}"/>
+            <arg value="${generated.dir}/assets"/>
+            <arg value="${translation.config}"/>
+            <arg value="${translation.text}"/>
+            <arg value="${translation.resolved}"/>
+        </java>
+    </target>
+
+    <target name="spritepack" depends="scratchpad,compile-comp" if="spritepack.enabled">
+        <java classname="spritepack.SpritePackBuild" fork="true" failonerror="true">
+            <classpath refid="comp.classpath"/>
+            <jvmarg value="-Djava.awt.headless=true"/>
+            <arg value="${logical.sp}"/>
+            <arg value="${generated.dir}"/>
+            <arg value="${spritepack.slot.count}"/>
+        </java>
+        <echo file="${generated.dir}/assets/image-provider">spritepack.SpritePackImageProvider</echo>
+    </target>
+
+    <target name="scratchpad-compact" depends="spritepack">
+        <delete>
+            <fileset dir="${generated.dir}/assets/sp" includes="b*.bin" excludes="b0000.bin"/>
+        </delete>
+        <resourcecount property="scratchpad.block.count">
+            <fileset dir="${generated.dir}/assets/sp" includes="b*.bin"/>
+        </resourcecount>
+        <fail message="Valkyrie 2 compact Scratchpad must retain exactly b0000.bin">
+            <condition><not><equals arg1="${scratchpad.block.count}" arg2="1"/></not></condition>
+        </fail>
+        <available file="${generated.dir}/assets/sp/b0000.bin" property="scratchpad.head.present"/>
+        <fail message="Valkyrie 2 compact Scratchpad is missing b0000.bin" unless="scratchpad.head.present"/>
+    </target>
+
+    <target name="assets" depends="descriptor,translate,scratchpad-compact"/>
+
+    <target name="font-fetch" depends="init">
+        <mkdir dir="${font.cache.dir}"/>
+        <java classname="doja.tools.font.FontFetch" fork="true" failonerror="true">
+            <classpath refid="tool.classpath"/>
+            <arg value="${font.cache.dir}"/>
+        </java>
+    </target>
+    <target name="font" depends="assets,font-fetch">
+        <mkdir dir="${generated.dir}/font"/>
+        <java classname="doja.tools.font.FontBuild" fork="true" failonerror="true">
+            <classpath refid="tool.classpath"/>
+            <jvmarg value="-Djava.awt.headless=true"/>
+            <arg value="${font.cache.file}"/>
+            <arg value="${generated.dir}/font"/>
+            <arg value="${generated.dir}"/>
+        </java>
+    </target>
+
+    <target name="compile-runtime" depends="init,check-runtime-source">
+        <delete dir="${runtime.classes}"/>
+        <mkdir dir="${runtime.classes}"/>
+        <javac srcdir="${runtime.src}" destdir="${runtime.classes}" encoding="UTF-8"
+               includeantruntime="false" debug="false" source="8" target="8">
+            <classpath refid="runtime.classpath"/>
+            <compilerarg value="-Xlint:-options"/>
+        </javac>
+    </target>
+
+    <target name="compile-game-runtime" depends="compile-runtime,patch-game" if="game.runtime.enabled">
+        <javac srcdir="${game.runtime.dir}" destdir="${runtime.classes}" includes="*.java" encoding="UTF-8"
+               includeantruntime="false" debug="false" source="8" target="8">
+            <classpath>
+                <path refid="runtime.classpath"/>
+                <pathelement location="${runtime.classes}"/>
+                <pathelement location="${game.classes}"/>
+            </classpath>
+            <compilerarg value="-Xlint:-options"/>
+        </javac>
+    </target>
+
+    <target name="compile-sprite-runtime" depends="compile-runtime,check-sprite-runtime-source" if="spritepack.enabled">
+        <javac srcdir="${spritepack.dir}" destdir="${runtime.classes}"
+               includes="SpritePackImageProvider.java,SpriteRepository.java" encoding="UTF-8"
+               includeantruntime="false" debug="false" source="8" target="8">
+            <classpath>
+                <path refid="runtime.classpath"/>
+                <pathelement location="${runtime.classes}"/>
+            </classpath>
+            <compilerarg value="-Xlint:-options"/>
+        </javac>
+    </target>
+
+    <target name="patch-runtime-bytecode" depends="compile-runtime,compile-game-runtime,compile-sprite-runtime">
+        <java classname="doja.tools.classfile.Utf8Patch" fork="true" failonerror="true">
+            <classpath refid="tool.classpath"/>
+            <arg value="${runtime.classes}"/>
+            <arg value="java/lang/StringBuilder"/>
+            <arg value="java/lang/StringBuffer"/>
+        </java>
+    </target>
+
+    <target name="raw" depends="jam-metadata,patch-runtime-bytecode,font">
+        <jar destfile="${build.dir}/raw.jar">
+            <manifest>
+                <attribute name="MIDlet-Name" value="${midlet.name}"/>
+                <attribute name="MIDlet-Vendor" value="${midlet.vendor}"/>
+                <attribute name="MIDlet-Version" value="${midlet.version}"/>
+                <attribute name="MIDlet-1" value="${midlet.name}, ${midlet.icon}, MainMidlet"/>
+                <attribute name="MicroEdition-Profile" value="MIDP-2.0"/>
+                <attribute name="MicroEdition-Configuration" value="CLDC-1.1"/>
+            </manifest>
+            <fileset dir="${runtime.classes}" includes="**/*.class"/>
+            <fileset dir="${game.classes}" excludes="META-INF/**"/>
+            <fileset dir="${generated.dir}" includes="assets/**"/>
+            <zipfileset dir="${generated.dir}/font" prefix="font" includes="glyphs.bin,sjis_map.bin" erroronmissingdir="false"/>
+            <fileset dir="${assets.dir}" includes="softkey_bg.png"/>
+        </jar>
+    </target>
+
+    <target name="verify-translation" depends="raw,compile-comp" if="translation.enabled">
+        <java classname="translation.TranslationVerifier" fork="true" failonerror="true">
+            <classpath refid="comp.classpath"/>
+            <arg value="${build.dir}/raw.jar"/>
+            <arg value="${translation.resolved}"/>
+            <arg value="${translation.config}"/>
+            <arg value="${generated.dir}/assets"/>
+        </java>
+    </target>
+
+    <target name="proguard-config" depends="jam-metadata">
+        <echo file="${build.dir}/proguard.pro">-injars '${basedir}/${build.dir}/raw.jar'
+-outjars '${basedir}/${build.dir}/processed.jar'
+-libraryjars '${basedir}/${cldc.jar}'
+-libraryjars '${basedir}/${midp.jar}'
+-dontusemixedcaseclassnames
+-overloadaggressively
+-allowaccessmodification
+-repackageclasses ''
+-microedition
+-target 1.1
+-keep public class MainMidlet extends javax.microedition.midlet.MIDlet { *; }
+-keep,allowobfuscation class doja.Resources { *; }
+-keep class ${AppClass} { public &lt;init&gt;(); public void start(); public void resume(); }
+</echo>
+    </target>
+    <target name="proguard-sprite" depends="proguard-config" if="spritepack.enabled">
+        <echo file="${build.dir}/proguard.pro" append="true">-keep public class spritepack.SpritePackImageProvider { public &lt;init&gt;(); }
+</echo>
+    </target>
+
+    <target name="proguard" depends="raw,verify-translation,proguard-sprite">
+        <java classname="proguard.ProGuard" fork="true" failonerror="true">
+            <classpath><pathelement location="${proguard.jar}"/></classpath>
+            <arg value="@${build.dir}/proguard.pro"/>
+        </java>
+        <java classname="doja.tools.verify.EntryPointVerify" fork="true" failonerror="true">
+            <classpath refid="tool.classpath"/>
+            <arg value="${build.dir}/processed.jar"/>
+            <arg value="${AppClass}"/>
+        </java>
+    </target>
+
+    <target name="dist" depends="proguard">
+        <copy file="${build.dir}/processed.jar" tofile="${dist.dir}/${dist.name}.jar"/>
+        <length file="${dist.dir}/${dist.name}.jar" property="jar.size"/>
+        <echo file="${dist.dir}/${dist.name}.jad" encoding="UTF-8">MIDlet-Name: ${midlet.name}
+MIDlet-Vendor: ${midlet.vendor}
+MIDlet-Version: ${midlet.version}
+MIDlet-1: ${midlet.name}, ${midlet.icon}, MainMidlet
+MicroEdition-Profile: MIDP-2.0
+MicroEdition-Configuration: CLDC-1.1
+MIDlet-Jar-URL: ${dist.name}.jar
+MIDlet-Jar-Size: ${jar.size}
+</echo>
+    </target>
+
+    <target name="build" depends="dist" description="Build the single game in games/"/>
+    <target name="clean" depends="reset-output" description="Delete build outputs"/>
+</project>
