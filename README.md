@@ -12,6 +12,7 @@ You only need [Apache Ant](https://ant.apache.org/bindownload.cgi)!
 2. Run `ant`;
 3. The MIDP version will be output to `dist/` :)
 
+*This requires JDK8 or newer.(but, OpenJDK8 is the best!)*
 
 ## Real Devices
 
