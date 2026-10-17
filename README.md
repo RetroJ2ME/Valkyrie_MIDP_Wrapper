@@ -21,7 +21,7 @@ You only need [Apache Ant](https://ant.apache.org/bindownload.cgi)!
 
 ## Real Devices
 
-JVM Heap ≥ 102400 KB, CPU  ≥ 434 Mhz
+JVM Heap ≥ 8096 KB, CPU  ≥ 434 Mhz
 
 Part 1 runs perfectly.
 
